@@ -1,0 +1,13 @@
+{
+  "name": "VU_CS103",
+  "description": "Crawler for collecting data to be used at Vanderbilt University for teaching CS103",
+  "version": "0.1.0",
+  "author": "Peter Volgyesi",
+  "repositories": [],
+  "private": true,
+  "engine": "node >= 0.8.x",
+  "dependencies": {
+    "oauth": "~0.9.8",
+    "mongodb": "~1.2.8"
+  }
+}
