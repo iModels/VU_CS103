@@ -1,112 +1,289 @@
 /*jslint node: true, plusplus: true, nomen: true */
 "use strict";
 
-var twitterAccessToken = "22259918-eQDMgqyLtsOPhY7FYBA3EFauNe7TYkAcvAqVhVM",
-    twitterAccessTokenSecret = "SjSoRzuuFur9qlbXZleahnDK8SFsXuOgeYAIdQuKA",
-    twitterConsumerKey = "DvURr4Q6Kr6sswUvvLzA",
-    twitterConsumerSecret = "a7gHEWLsdjxD9fX9fHdoJ4QlukRTqzsrTPwhWdpiNmM",
-    mongoConnectionString = "mongodb://cdibox.volgy.com:27017/vu_cs103";
+var options = {
+        twitterAccessToken: "1092955122-x8ViAZ2030vjski3ZIvwqX6ZjAoqilqzvbfaQd9",
+        twitterAccessTokenSecret: "PKLGIiHWA3mA1K2bfyVtynRyTeFy8xYwRmr6XhBGQ",
+        twitterConsumerKey: "rdDcbK0Hqjd8ZcwxMmVg",
+        twitterConsumerSecret: "oCoqcLBMeX65C4x4i0Xpj9mOe8Cdn5HOvlyaMLHCUY",
+        mongoConnectionString: "mongodb://cdibox.volgy.com:27017/vu_cs103",
+        maxDistance: 1,
+        seedUser: 'VUCS103'
+    };
 
-var MongoClient = require('mongodb').MongoClient;
-var userCollection, friendshipCollection;
+var oauth = require('oauth/lib/oauth');
+var querystring = require('querystring');
 
-var OAuth = require('oauth/lib/oauth').OAuth;
-var oa = new OAuth(
-    "http://twitter.com/oauth/request_token",
-    "http://twitter.com/oauth/access_token",
-    twitterConsumerKey,
-    twitterConsumerSecret,
-    "1.0A",
-    null,
-    "HMAC-SHA1"
-);
+var twitter = new oauth.OAuth(
+        "http://twitter.com/oauth/request_token",
+        "http://twitter.com/oauth/access_token",
+        options.twitterConsumerKey,
+        options.twitterConsumerSecret,
+        "1.0A",
+        null,
+        "HMAC-SHA1"
+    );
 
-var users = {};
-var unexploredUsers = [];
-var exploringUser;
+var stats = {
+    nUsers: 0,
+    nTweets: 0
+};
 
-function dbInsertCallback(error, coll) {
-    if (error) {
-        console.log(error);
-        throw error;
-    }
+function showStats() {
+    console.log("Collected %d users and %d tweets.", stats.nUsers, stats.nTweets);
 }
 
-function processResponse(error, data, response) {
-    var i, now, limitReset, limitRemaining, limitLimit,
-        limitTimeRemaining, nextRequestTime,
-        user, dbCollection;
+// Generic Work Queue
+// This is a class, concrete work queue implementations
+// should define buildQuery and processResults methods
+function WorkQueue() {
+    this.queue = [];
+    this.idle = true;
+    this.limitInterval = 0;
+}
+
+WorkQueue.prototype.crank = function () {
+    var self = this, query;
+
+    if (this.queue.length === 0) {
+        self.idle = true;
+        return;
+    }
+
+    query = self.buildQuery();
+
+    self.idle = false;
+
+    function processResponse(error, data, response) {
+        if (error) {
+            console.error(error, response.toString());
+            self.crank();
+            return;
+        }
+
+        data = JSON.parse(data);
+        self.processResults(data, query);
+        self.limitInterval = self.calcInterval(response.headers);
+        self.crank();
+    }
+
+    function submitQuery() {
+        twitter.get(query.toString(), options.twitterAccessToken, options.twitterAccessTokenSecret, processResponse);
+    }
+
+    setTimeout(submitQuery, self.limitInterval);
+};
+
+WorkQueue.prototype.enqueue = function (workItems) {
+    this.queue = this.queue.concat(workItems);
+    if (this.idle) {
+        this.crank();
+    }
+};
+
+WorkQueue.prototype.calcInterval = function (headers) {
+    var now, limitReset, limitRemaining, limitLimit, limitTimeRemaining;
 
     now = new Date();
-
-    if (error) {
-        console.log(require('sys').inspect(error));
-        throw error;
-    } else {
-        data = JSON.parse(data);
-
-        for (i = 0; i < data.users.length; i++) {
-            user = data.users[i];
-            if (users[user.id_str] === undefined) {
-                users[user.id_str] = user;
-                userCollection.insert(user, dbInsertCallback);
-                unexploredUsers.push(user);
-            }
-            friendshipCollection.insert({'src': (exploringUser ? exploringUser.id_str : undefined), 'dst': user.id_str}, dbInsertCallback);
-            console.log((exploringUser ? exploringUser.screen_name : "me") + "--->" + user.screen_name);
-        }
-
-        if (!data.next_cursor) {
-            exploringUser = unexploredUsers.shift();
-            if (!exploringUser) {
-                console.log("## Exploration finished. Found " + users.length + " users.");
-                return;
-            }
-            data.next_cursor = undefined;   // make sure it is not 0
-        }
-
-        // Rate limiting
-        limitReset = parseInt(response.headers['x-rate-limit-reset'], 10);
-        limitRemaining = parseInt(response.headers['x-rate-limit-remaining'], 10);
-        limitLimit = parseInt(response.headers['x-rate-limit-limit'], 10);
-        limitTimeRemaining = (limitReset * 1e3) - now.getTime();
-        if (limitRemaining === 0) {
-            nextRequestTime = limitTimeRemaining + 5000; // to be on the safe side
-        } else {
-            nextRequestTime = Math.round(limitTimeRemaining / limitRemaining);
-        }
-        console.log("## Limit: " + limitRemaining + " / " + limitLimit +
-            " requests (reset in " + Math.round(limitTimeRemaining / 1e3) + " s). Next request in " +
-            nextRequestTime + " ms.");
-
-        setTimeout(function () {
-            exploreUser(exploringUser ? exploringUser.id_str : undefined, data.next_cursor);
-        }, nextRequestTime);
+    limitReset = parseInt(headers['x-rate-limit-reset'], 10);
+    limitRemaining = parseInt(headers['x-rate-limit-remaining'], 10);
+    limitLimit = parseInt(headers['x-rate-limit-limit'], 10);
+    limitTimeRemaining = (limitReset * 1e3) - now.getTime();
+    if (limitRemaining === 0) {
+        return (limitTimeRemaining + 10e3); // to be on the safe side (10s timesync error)
     }
+    return Math.round(limitTimeRemaining / limitRemaining);
+};
+
+// User Work Queue - for user lookup
+// work items: <user_id>
+var userWQ = new WorkQueue();
+
+userWQ.buildQuery = function () {
+    return {
+        params: {user_id: this.queue.splice(0, 100).join(',')}, // Twitter limit (100 users/request)
+        toString: function () {
+            return ("https://api.twitter.com/1.1/users/lookup.json?" +
+                querystring.stringify(this.params));
+        }
+    };
+};
+
+userWQ.processResults = function (data, query) {
+    data.forEach(function (user) {
+        // TODO: dump to database
+    });
+    stats.nUsers += data.length;
+    showStats();
+};
+
+// Tweet Work Queue - for getting all tweets of a user
+// work items: {user_id: <user_id>, max_id: <max_id>}
+//                                  ^ ~ optional ~ ^
+var tweetWQ = new WorkQueue();
+
+tweetWQ.buildQuery = function () {
+    return {
+        params: this.queue.shift(),
+        toString: function () {
+            return ("https://api.twitter.com/1.1/statuses/user_timeline.json?count=200&trim_user=true&" +
+                querystring.stringify(this.params));
+        }
+    };
+};
+
+tweetWQ.processResults = function (data, query) {
+    var lastTweet;
+
+    data.forEach(function (tweet) {
+        // TODO: dump to database
+    });
+    stats.nTweets += data.length;
+    showStats();
+
+    if (data.length) {
+        lastTweet = data[data.length - 1];
+        this.enqueue([{user_id: query.params.user_id, max_id: lastTweet.id_str}]);
+    }
+};
+
+// Follows Work Queue - for getting all users followed by this user
+// All discovered users will be automatically added to the discovery set
+// work items: {user_id: <user_id>, cursor: <cursor>}
+//                                  ^ ~ optional ~ ^
+var followsWQ = new WorkQueue();
+
+followsWQ.buildQuery = function () {
+    return {
+        params: this.queue.shift(),
+        toString: function () {
+            return ("https://api.twitter.com/1.1/friends/ids.json?" +
+                querystring.stringify(this.params));
+        }
+    };
+};
+
+followsWQ.processResults = function (data, query) {
+    var srcUserId;
+
+    if (!data.ids) {
+        return;
+    }
+
+    srcUserId = query.params.user_id;
+    data.ids.forEach(function (dstUserId) {
+        // TODO: dump to database
+    });
+
+    if (data.next_cursor) {
+        this.enqueue([{user_id: srcUserId, cursor: data.next_cursor_str}]);
+    }
+
+    addUsers(data.ids, knownUsers[srcUserId] + 1);
+};
+
+// Followers Work Queue - for getting all users follow this user
+// All discovered users will be automatically added to the discovery set
+// work items: {user_id: <user_id>, cursor: <cursor>}
+//                                  ^ ~ optional ~ ^
+var followersWQ = new WorkQueue();
+
+followersWQ.buildQuery = function () {
+    return {
+        params: this.queue.shift(),
+        toString: function () {
+            return ("https://api.twitter.com/1.1/followers/ids.json?" +
+                querystring.stringify(this.params));
+        }
+    };
+};
+
+followersWQ.processResults = function (data, query) {
+    var dstUserId;
+
+    if (!data.ids) {
+        return;
+    }
+
+    dstUserId = query.params.user_id;
+    data.ids.forEach(function (srcUserId) {
+        // TODO: dump to database
+    });
+
+    if (data.next_cursor) {
+        this.enqueue([{user_id: dstUserId, cursor: data.next_cursor_str}]);
+    }
+
+    addUsers(data.ids, knownUsers[dstUserId] + 1);
+};
+
+// Adding new users to be processed
+// Queues are fed from here (and by themselves)
+var knownUsers = {};
+
+function addUsers(userIds, distance) {
+    var i, userId,
+        userItems = [], 
+        tweetItems = [], 
+        followsItems = [],
+        followersItems = [];
+
+    if (distance > options.maxDistance) {
+        return;
+    }
+
+    for (i = 0; i < userIds.length; i++) {
+        userId = userIds[i];
+        if (!(userId in knownUsers)) {
+            knownUsers[userId] = distance;
+            userItems.push(userId);
+            tweetItems.push({user_id: userId});
+            followsItems.push({user_id: userId});
+            followersItems.push({user_id: userId});
+        }
+    }
+
+    userWQ.enqueue(userItems);
+    tweetWQ.enqueue(tweetItems);
+    followsWQ.enqueue(followsItems);
+    followersWQ.enqueue(followersItems);
 }
 
-function exploreUser(user_id, cursor) {
-    var queryString = "https://api.twitter.com/1.1/friends/list.json?skip_status=true&include_user_entities=false";
-    if (user_id) {
-        queryString += "&user_id=" + user_id;
+// Seeding the crawl process with a wildcard search
+// for root user(s)
+function seedSearch(username) {
+    var userIds, qString;
+
+    function seedResults(error, data, response) {
+        var users;
+
+        if (error) {
+            console.error(error, response.headers);
+            return;
+        }
+
+        users = JSON.parse(data);
+        userIds = [];
+        console.log("Seeding the database with the following user(s):");
+        users.forEach(function (user) {
+            console.log("%s [id:%s], Name: '%s'", user.screen_name, user.id_str, user.name);
+            userIds.push(user.id_str);
+        });
+        addUsers(userIds, 0);
     }
-    if (cursor) {
-        queryString += "&cursor=" + cursor;
-    }
-    oa.get(
-        queryString,
-        twitterAccessToken,
-        twitterAccessTokenSecret,
-        processResponse
+
+    // Fuzzy search
+    // qString = "https://api.twitter.com/1.1/users/search.json?q=" + username;
+
+    // Simple lookup (exact match)
+    qString = "https://api.twitter.com/1.1/users/lookup.json?screen_name=" + username;
+
+    twitter.get(
+        qString,
+        options.twitterAccessToken,
+        options.twitterAccessTokenSecret,
+        seedResults
     );
 }
 
-MongoClient.connect(mongoConnectionString, function (err, db) {
-    if(err) { return console.log(err); }
-    userCollection = db.collection('Users');
-    friendshipCollection = db.collection('Friendships');
-    exploreUser();
-});
-
-
-
+seedSearch(process.argv.length > 2 ? process.argv[2] : options.seedUser);
