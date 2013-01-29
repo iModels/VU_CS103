@@ -13,6 +13,7 @@ var options = {
 
 var oauth = require('oauth/lib/oauth');
 var querystring = require('querystring');
+var MongoClient = require('mongodb').MongoClient;
 
 var twitter = new oauth.OAuth(
         "http://twitter.com/oauth/request_token",
@@ -23,6 +24,8 @@ var twitter = new oauth.OAuth(
         null,
         "HMAC-SHA1"
     );
+
+var userColl, tweetColl, followColl;
 
 var stats = {
     nUsers: 0,
@@ -111,7 +114,12 @@ userWQ.buildQuery = function () {
 
 userWQ.processResults = function (data, query) {
     data.forEach(function (user) {
-        // TODO: dump to database
+        user._id = user.id_str; // Use the same (unique) id in mongo
+        userColl.save(user, {w: 1}, function (err, result) {
+            if (err) {
+                console.error(err);
+            }
+        });
     });
     stats.nUsers += data.length;
     showStats();
@@ -136,7 +144,12 @@ tweetWQ.processResults = function (data, query) {
     var lastTweet;
 
     data.forEach(function (tweet) {
-        // TODO: dump to database
+        tweet._id = tweet.id_str; // Use the same (unique) id in mongo
+        tweetColl.save(tweet, {w: 1}, function (err, result) {
+            if (err) {
+                console.error(err);
+            }
+        });
     });
     stats.nTweets += data.length;
     showStats();
@@ -172,7 +185,11 @@ followsWQ.processResults = function (data, query) {
 
     srcUserId = query.params.user_id;
     data.ids.forEach(function (dstUserId) {
-        // TODO: dump to database
+        followColl.save({src: srcUserId, dst: dstUserId}, {w: 1}, function (err, result) {
+            if (err) {
+                console.error(err);
+            }
+        });
     });
 
     if (data.next_cursor) {
@@ -207,7 +224,11 @@ followersWQ.processResults = function (data, query) {
 
     dstUserId = query.params.user_id;
     data.ids.forEach(function (srcUserId) {
-        // TODO: dump to database
+        followColl.save({src: srcUserId, dst: dstUserId}, {w: 1}, function (err, result) {
+            if (err) {
+                console.error(err);
+            }
+        });
     });
 
     if (data.next_cursor) {
@@ -223,8 +244,8 @@ var knownUsers = {};
 
 function addUsers(userIds, distance) {
     var i, userId,
-        userItems = [], 
-        tweetItems = [], 
+        userItems = [],
+        tweetItems = [],
         followsItems = [],
         followersItems = [];
 
@@ -258,7 +279,7 @@ function seedSearch(username) {
         var users;
 
         if (error) {
-            console.error(error, response.headers);
+            console.error(error, response);
             return;
         }
 
@@ -286,4 +307,38 @@ function seedSearch(username) {
     );
 }
 
-seedSearch(process.argv.length > 2 ? process.argv[2] : options.seedUser);
+// Primitive command line processing
+if (process.argv.length > 2) {
+    options.seedUser = process.argv[2];
+}
+
+
+// Connect to db, get all connections, start the crawler
+MongoClient.connect(options.mongoConnectionString, function (err, db) {
+    if (err) {
+        console.error(err);
+        return;
+    }
+    db.collection("User", function (err, coll) {
+        if (err) {
+            console.error(err);
+            return;
+        }
+        userColl = coll;
+        db.collection("Tweet", function (err, coll) {
+            if (err) {
+                console.error(err);
+                return;
+            }
+            tweetColl = coll;
+            db.collection("Follow", function (err, coll) {
+                if (err) {
+                    console.error(err);
+                    return;
+                }
+                followColl = coll;
+                seedSearch(options.seedUser);
+            });
+        });
+    });
+});
