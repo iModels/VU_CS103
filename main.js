@@ -6,8 +6,10 @@ var options = {
         twitterAccessTokenSecret: "PKLGIiHWA3mA1K2bfyVtynRyTeFy8xYwRmr6XhBGQ",
         twitterConsumerKey: "rdDcbK0Hqjd8ZcwxMmVg",
         twitterConsumerSecret: "oCoqcLBMeX65C4x4i0Xpj9mOe8Cdn5HOvlyaMLHCUY",
-        mongoConnectionString: "mongodb://cdibox.volgy.com:27017/vu_cs103",
-        maxDistance: 1,
+        mongoConnectionString: "mongodb://cdibox.volgy.com:27017/vu_cs103_trunc_d2",
+        maxDistance: 2,
+        max_follows : 10000,
+        max_followers : 10000,
         seedUser: 'VUCS103'
     };
 
@@ -29,11 +31,12 @@ var userColl, tweetColl, followColl;
 
 var stats = {
     nUsers: 0,
-    nTweets: 0
+    nTweets: 0,
+    nFollows: 0
 };
 
 function showStats() {
-    console.log("Collected %d users and %d tweets.", stats.nUsers, stats.nTweets);
+    console.log("Collected %d users, %d tweets and %d follows.", stats.nUsers, stats.nTweets, stats.nFollows);
 }
 
 // Generic Work Queue
@@ -59,7 +62,12 @@ WorkQueue.prototype.crank = function () {
 
     function processResponse(error, data, response) {
         if (error) {
-            console.error(error, response.toString());
+            console.error(error);
+            if (error.statusCode != 401) {
+                console.error("Retrying....");
+                self.limitInterval += 60e3; // increase the the interval by 1 minute (play safe)
+                setTimeout(submitQuery, self.limitInterval);
+            }
             self.crank();
             return;
         }
@@ -120,6 +128,12 @@ userWQ.processResults = function (data, query) {
                 console.error(err);
             }
         });
+        if (user.friends_count < options.max_follows) {
+            followsWQ.enqueue([{user_id: user.id_str}]);
+        }
+        if (user.followers_count < options.max_followers) {
+            followersWQ.enqueue([{user_id: user.id_str}]);
+        }
     });
     stats.nUsers += data.length;
     showStats();
@@ -192,6 +206,9 @@ followsWQ.processResults = function (data, query) {
         });
     });
 
+    stats.nFollows += data.ids.length;
+    showStats();
+
     if (data.next_cursor) {
         this.enqueue([{user_id: srcUserId, cursor: data.next_cursor_str}]);
     }
@@ -231,6 +248,9 @@ followersWQ.processResults = function (data, query) {
         });
     });
 
+    stats.nFollows += data.ids.length;
+    showStats();
+
     if (data.next_cursor) {
         this.enqueue([{user_id: dstUserId, cursor: data.next_cursor_str}]);
     }
@@ -245,9 +265,9 @@ var knownUsers = {};
 function addUsers(userIds, distance) {
     var i, userId,
         userItems = [],
-        tweetItems = [],
-        followsItems = [],
-        followersItems = [];
+        tweetItems = [];
+        // followsItems = [],
+        // followersItems = [];
 
     if (distance > options.maxDistance) {
         return;
@@ -259,15 +279,15 @@ function addUsers(userIds, distance) {
             knownUsers[userId] = distance;
             userItems.push(userId);
             tweetItems.push({user_id: userId});
-            followsItems.push({user_id: userId});
-            followersItems.push({user_id: userId});
+            // followsItems.push({user_id: userId});
+            // followersItems.push({user_id: userId});
         }
     }
 
     userWQ.enqueue(userItems);
     tweetWQ.enqueue(tweetItems);
-    followsWQ.enqueue(followsItems);
-    followersWQ.enqueue(followersItems);
+    // followsWQ.enqueue(followsItems);
+    // followersWQ.enqueue(followersItems);
 }
 
 // Seeding the crawl process with a wildcard search
@@ -314,7 +334,7 @@ if (process.argv.length > 2) {
 
 
 // Connect to db, get all connections, start the crawler
-MongoClient.connect(options.mongoConnectionString, function (err, db) {
+MongoClient.connect(options.mongoConnectionString, {w: 1, maxPoolSize: 1}, function (err, db) {
     if (err) {
         console.error(err);
         return;
