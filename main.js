@@ -6,10 +6,10 @@ var options = {
         twitterAccessTokenSecret: "PKLGIiHWA3mA1K2bfyVtynRyTeFy8xYwRmr6XhBGQ",
         twitterConsumerKey: "rdDcbK0Hqjd8ZcwxMmVg",
         twitterConsumerSecret: "oCoqcLBMeX65C4x4i0Xpj9mOe8Cdn5HOvlyaMLHCUY",
-        mongoConnectionString: "mongodb://cdibox.volgy.com:27017/vu_cs103_trunc_d2",
+        mongoConnectionString: "mongodb://cdibox.volgy.com:27017/vu_cs103_feb20",
         maxDistance: 2,
-        max_follows : 10000,
-        max_followers : 10000,
+        max_follows : 15000,
+        max_followers : 15000,
         seedUser: 'VUCS103'
     };
 
@@ -199,7 +199,7 @@ followsWQ.processResults = function (data, query) {
 
     srcUserId = query.params.user_id;
     data.ids.forEach(function (dstUserId) {
-        followColl.save({src: srcUserId, dst: dstUserId}, {w: 1}, function (err, result) {
+        followColl.save({src: srcUserId, dst: dstUserId.toString()}, {w: 1}, function (err, result) {
             if (err) {
                 console.error(err);
             }
@@ -241,7 +241,7 @@ followersWQ.processResults = function (data, query) {
 
     dstUserId = query.params.user_id;
     data.ids.forEach(function (srcUserId) {
-        followColl.save({src: srcUserId, dst: dstUserId}, {w: 1}, function (err, result) {
+        followColl.save({src: srcUserId.toString(), dst: dstUserId}, {w: 1}, function (err, result) {
             if (err) {
                 console.error(err);
             }
