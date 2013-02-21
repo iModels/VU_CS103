@@ -35,6 +35,7 @@ function dumpUsers(userColl, cbDone) {
         user.name && console.log("users(%d).name = '%s';", user.seq, sanitize(user.name));
         user.created_at && console.log("users(%d).created_at = '%s';", user.seq, user.created_at);
         user.time_zone && console.log("users(%d).time_zone = '%s';", user.seq, user.time_zone);
+        user.statuses_count && console.log("users(%d).tweet_count = %d;", user.seq, user.statuses_count);
         allUsers[user.id_str] = user;
     });
 }
@@ -60,6 +61,7 @@ function dumpTweets(tweetColl, cbDone) {
         tweet.created_at && console.log("tweets(%d).created_at = '%s';", tweet.seq, tweet.created_at);
         tweet.text && console.log("tweets(%d).text = '%s';", tweet.seq, sanitize(tweet.text));
         console.log("tweets(%d).is_retweet = %s;", tweet.seq, tweet.retweeted_status ? "true" : "false");
+        tweet.retweet_count && console.log("tweets(%d).retweet_count = %d;", tweet.seq, tweet.retweet_count);
         tweet.entities && tweet.entities.hashtags && tweet.entities.hashtags.length &&
             console.log("tweets(%d).hashtags = [%s];", tweet.seq, tweet.entities.hashtags.map(function (t) {return "'" + t.text + "'";}).join(","));
         tweet.entities && tweet.entities.user_mentions && tweet.entities.user_mentions.length && 
