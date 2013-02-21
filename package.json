@@ -8,6 +8,7 @@
   "engine": "node >= 0.8.x",
   "dependencies": {
     "oauth": "~0.9.8",
-    "mongodb": "~1.2.8"
+    "mongodb": "~1.2.8",
+    "step": "0.0.5"
   }
 }

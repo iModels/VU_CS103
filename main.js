@@ -6,7 +6,7 @@ var options = {
         twitterAccessTokenSecret: "PKLGIiHWA3mA1K2bfyVtynRyTeFy8xYwRmr6XhBGQ",
         twitterConsumerKey: "rdDcbK0Hqjd8ZcwxMmVg",
         twitterConsumerSecret: "oCoqcLBMeX65C4x4i0Xpj9mOe8Cdn5HOvlyaMLHCUY",
-        mongoConnectionString: "mongodb://cdibox.volgy.com:27017/vu_cs103_feb21",
+        mongoConnectionString: "mongodb://cdibox.volgy.com:27017/vu_cs103_feb21_w",
         maxDistance: 2,
         max_follows : 15000,
         max_followers : 15000,
@@ -16,6 +16,7 @@ var options = {
 var oauth = require('oauth/lib/oauth');
 var querystring = require('querystring');
 var MongoClient = require('mongodb').MongoClient;
+var step = require('step');
 
 var twitter = new oauth.OAuth(
         "http://twitter.com/oauth/request_token",
@@ -37,9 +38,9 @@ var stats = {
 
 function showStats() {
     console.log("Users: %d [%d (%ds)]  | Tweets:  %d [%d (%ds)] | Follows: %d [%d (%ds)] [%d (%ds)]", 
-        stats.nUsers, userWQ.queue.length, userWQ.limitInterval/1e3, 
-        stats.nTweets, tweetWQ.queue.length, tweetWQ.limitInterval/1e3, 
-        stats.nFollows, followsWQ.queue.length, followsWQ.limitInterval/1e3, followersWQ.queue.length, followersWQ.limitInterval/1e3);
+        stats.nUsers, userWQ.queue.length, userWQ.limitInterval / 1e3, 
+        stats.nTweets, tweetWQ.queue.length, tweetWQ.limitInterval / 1e3, 
+        stats.nFollows, followsWQ.queue.length, followsWQ.limitInterval / 1e3, followersWQ.queue.length, followersWQ.limitInterval / 1e3);
 }
 
 // Generic Work Queue
@@ -68,21 +69,21 @@ WorkQueue.prototype.crank = function () {
             console.error("\n\n" + query.toString());
             switch (error.statusCode) {  
 
-                // Intentional fallthrough: retry error cases
-                case 420: // Enhance Your Calm
-                case 429: // Too Many Requests
-                case 503: // Service Unavailable
-                case 504: // Gateway timeout
-                    self.limitInterval += 60e3; // increase the the interval by 1 minute (play safe)
-                    setTimeout(submitQuery, self.limitInterval);
-                    console.error("Retrying....");
-                    break;
+            // Intentional fallthrough: retry error cases
+            case 420: // Enhance Your Calm
+            case 429: // Too Many Requests
+            case 503: // Service Unavailable
+            case 504: // Gateway timeout
+                self.limitInterval += 60e3; // increase the the interval by 1 minute (play safe)
+                setTimeout(submitQuery, self.limitInterval);
+                console.error("Retrying....");
+                break;
 
-                // Silent fail for all other problems
-                default:
-                    self.crank();
-                    console.error("Skipping....\n\n");
-                    break;
+            // Silent fail for all other problems
+            default:
+                self.crank();
+                console.error("Skipping....\n\n");
+                break;
             }
             console.error("\n\n");
             return;
@@ -351,31 +352,28 @@ if (process.argv.length > 2) {
 
 
 // Connect to db, get all connections, start the crawler
-MongoClient.connect(options.mongoConnectionString, {w: 1, maxPoolSize: 1}, function (err, db) {
-    if (err) {
-        console.error(err);
-        return;
-    }
-    db.collection("User", function (err, coll) {
+step(
+    function connectDb() {
+        MongoClient.connect(options.mongoConnectionString, {w: 1, maxPoolSize: 1}, this);
+    },
+    function fetchCollections(err, db) {
         if (err) {
             console.error(err);
-            return;
+            throw err;
         }
-        userColl = coll;
-        db.collection("Tweet", function (err, coll) {
-            if (err) {
-                console.error(err);
-                return;
-            }
-            tweetColl = coll;
-            db.collection("Follow", function (err, coll) {
-                if (err) {
-                    console.error(err);
-                    return;
-                }
-                followColl = coll;
-                seedSearch(options.seedUser);
-            });
-        });
-    });
-});
+        db.collection("User", this.parallel());
+        db.collection("Tweet", this.parallel());
+        db.collection("Follow", this.parallel());
+    },
+    function startCrawler(err, uColl, tColl, fColl) {
+        if (err) {
+            console.error(err);
+            throw err;
+        }
+        userColl = uColl;
+        tweetColl = tColl;
+        followColl = fColl;
+
+        seedSearch(options.seedUser);
+    }
+);
