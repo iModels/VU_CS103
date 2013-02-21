@@ -6,7 +6,7 @@ var options = {
         twitterAccessTokenSecret: "PKLGIiHWA3mA1K2bfyVtynRyTeFy8xYwRmr6XhBGQ",
         twitterConsumerKey: "rdDcbK0Hqjd8ZcwxMmVg",
         twitterConsumerSecret: "oCoqcLBMeX65C4x4i0Xpj9mOe8Cdn5HOvlyaMLHCUY",
-        mongoConnectionString: "mongodb://cdibox.volgy.com:27017/vu_cs103_feb20",
+        mongoConnectionString: "mongodb://cdibox.volgy.com:27017/vu_cs103_feb21",
         maxDistance: 2,
         max_follows : 15000,
         max_followers : 15000,
@@ -36,7 +36,10 @@ var stats = {
 };
 
 function showStats() {
-    console.log("Collected %d users, %d tweets and %d follows.", stats.nUsers, stats.nTweets, stats.nFollows);
+    console.log("Users: %d [%d (%ds)]  | Tweets:  %d [%d (%ds)] | Follows: %d [%d (%ds)] [%d (%ds)]", 
+        stats.nUsers, userWQ.queue.length, userWQ.limitInterval/1e3, 
+        stats.nTweets, tweetWQ.queue.length, tweetWQ.limitInterval/1e3, 
+        stats.nFollows, followsWQ.queue.length, followsWQ.limitInterval/1e3, followersWQ.queue.length, followersWQ.limitInterval/1e3);
 }
 
 // Generic Work Queue
@@ -62,13 +65,20 @@ WorkQueue.prototype.crank = function () {
 
     function processResponse(error, data, response) {
         if (error) {
-            console.error(error);
-            if (error.statusCode != 401) {
-                console.error("Retrying....");
+            if (error.statusCode === 401) {  
+                // Silent fail for access denied responses
+                self.crank();
+            }
+            else {
+                console.error("\n\n");
+                if (error.statusCode === 429) {  
+                    console.error(query.toString());
+                }
+                console.error(error);
+                console.error("Retrying....\n\n");
                 self.limitInterval += 60e3; // increase the the interval by 1 minute (play safe)
                 setTimeout(submitQuery, self.limitInterval);
             }
-            self.crank();
             return;
         }
 
