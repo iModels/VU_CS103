@@ -65,20 +65,26 @@ WorkQueue.prototype.crank = function () {
 
     function processResponse(error, data, response) {
         if (error) {
-            if (error.statusCode === 401) {  
-                // Silent fail for access denied responses
-                self.crank();
+            console.error("\n\n" + query.toString());
+            switch (error.statusCode) {  
+
+                // Intentional fallthrough: retry error cases
+                case 420: // Enhance Your Calm
+                case 429: // Too Many Requests
+                case 503: // Service Unavailable
+                case 504: // Gateway timeout
+                    self.limitInterval += 60e3; // increase the the interval by 1 minute (play safe)
+                    setTimeout(submitQuery, self.limitInterval);
+                    console.error("Retrying....");
+                    break;
+
+                // Silent fail for all other problems
+                default:
+                    self.crank();
+                    console.error("Skipping....\n\n");
+                    break;
             }
-            else {
-                console.error("\n\n");
-                if (error.statusCode === 429) {  
-                    console.error(query.toString());
-                }
-                console.error(error);
-                console.error("Retrying....\n\n");
-                self.limitInterval += 60e3; // increase the the interval by 1 minute (play safe)
-                setTimeout(submitQuery, self.limitInterval);
-            }
+            console.error("\n\n");
             return;
         }
 
@@ -133,6 +139,7 @@ userWQ.buildQuery = function () {
 userWQ.processResults = function (data, query) {
     data.forEach(function (user) {
         user._id = user.id_str; // Use the same (unique) id in mongo
+        user.distance = knownUsers[user.id_str];
         userColl.save(user, {w: 1}, function (err, result) {
             if (err) {
                 console.error(err);
