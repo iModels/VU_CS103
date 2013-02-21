@@ -2,10 +2,12 @@
 "use strict";
 
 var options = {
-        mongoConnectionString: "mongodb://cdibox.volgy.com:27017/vu_cs103_feb20"
+        mongoConnectionString: "mongodb://cdibox.volgy.com:27017/vu_cs103_feb21"
     };
 
 var MongoClient = require('mongodb').MongoClient;
+
+var allUsers = {};
 
 function sanitize(str) {
     return str.replace(/\'/gi, "''").replace(/[\x00-\x20]/gi, " ");
@@ -33,6 +35,7 @@ function dumpUsers(userColl, cbDone) {
         user.name && console.log("users(%d).name = '%s';", user.seq, sanitize(user.name));
         user.created_at && console.log("users(%d).created_at = '%s';", user.seq, user.created_at);
         user.time_zone && console.log("users(%d).time_zone = '%s';", user.seq, user.time_zone);
+        allUsers[user.id_str] = user;
     });
 }
 
@@ -66,11 +69,13 @@ function dumpTweets(tweetColl, cbDone) {
 }
 
 function dumpFollows(followColl, cbDone) {
-    var followCnt;
+    var followCnt, internalFollowCnt;
 
     console.log("follows = ["); 
-    followCnt = 1;
+    followCnt = internalFollowCnt = 1;
     followColl.find().each(function (err, follow) {
+        var isInternal;
+
         if (err) {
             console.error(err);
             return;
@@ -81,10 +86,14 @@ function dumpFollows(followColl, cbDone) {
             return;
         }
         if ((followCnt % 1e4) === 0) {
-            console.warn("Processed %d follows", followCnt);
+            console.warn("Processed %d (%d) follows", followCnt, internalFollowCnt);
         }
         follow.seq = followCnt++;
-        console.log("%s %s;", follow.src, follow.dst);
+        isInternal = allUsers.hasOwnProperty(follow.src) && allUsers.hasOwnProperty(follow.dst);
+        if (isInternal) {
+            internalFollowCnt += 1;
+        }
+        console.log("%s %s %s;", follow.src, follow.dst, isInternal.toString());
     });
 }
 
