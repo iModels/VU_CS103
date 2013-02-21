@@ -11,8 +11,8 @@ function sanitize(str) {
     return str.replace(/\'/gi, "''").replace(/[\x00-\x20]/gi, " ");
 }
 
-function dump(userColl, tweetColl, followColl) {
-    var userCnt, tweetCnt;
+function dumpUsers(userColl, cbDone) {
+    var userCnt;
 
     userCnt = 1;
     userColl.find().each(function (err, user) {
@@ -21,7 +21,7 @@ function dump(userColl, tweetColl, followColl) {
             return;
         }
         if (!user) {
-            console.warn("WARNING: empty user object");
+            cbDone();
             return;
         }
         if ((userCnt % 1e3) === 0) {
@@ -33,15 +33,11 @@ function dump(userColl, tweetColl, followColl) {
         user.name && console.log("users(%d).name = '%s';", user.seq, sanitize(user.name));
         user.created_at && console.log("users(%d).created_at = '%s';", user.seq, user.created_at);
         user.time_zone && console.log("users(%d).time_zone = '%s';", user.seq, user.time_zone);
-
-        followColl.find({src: user.id_str}).toArray(function (err, follows) {
-            follows.length && console.log("users(%d).follows = [%s];", user.seq, follows.map(function (f) {return f.dst;}).join(","));
-        });
-
-        followColl.find({dst: user.id_str}).toArray(function (err, followers) {
-            followers.length && console.log("users(%d).followers = [%s];", user.seq, followers.map(function (f) {return f.src;}).join(","));
-        });
     });
+}
+
+function dumpTweets(tweetColl, cbDone) {
+    var tweetCnt;
 
     tweetCnt = 1;
     tweetColl.find().each(function (err, tweet) {
@@ -50,7 +46,7 @@ function dump(userColl, tweetColl, followColl) {
             return;
         }
         if (!tweet) {
-            console.warn("WARNING: empty tweet object");
+            cbDone();
             return;
         }
         if ((tweetCnt % 10e3) === 0) {
@@ -61,7 +57,7 @@ function dump(userColl, tweetColl, followColl) {
         tweet.created_at && console.log("tweets(%d).created_at = '%s';", tweet.seq, tweet.created_at);
         tweet.text && console.log("tweets(%d).text = '%s';", tweet.seq, sanitize(tweet.text));
         console.log("tweets(%d).is_retweet = %s;", tweet.seq, tweet.retweeted_status ? "true" : "false");
-        tweet.entities && tweet.entities.hashtags && tweet.entities.hashtags.length && 
+        tweet.entities && tweet.entities.hashtags && tweet.entities.hashtags.length &&
             console.log("tweets(%d).hashtags = [%s];", tweet.seq, tweet.entities.hashtags.map(function (t) {return "'" + t.text + "'";}).join(","));
         tweet.entities && tweet.entities.user_mentions && tweet.entities.user_mentions.length && 
             console.log("tweets(%d).mentions = [%s];", tweet.seq, tweet.entities.user_mentions.map(function (m) {return m.id_str;}).join(","));
@@ -69,29 +65,71 @@ function dump(userColl, tweetColl, followColl) {
     });
 }
 
+function dumpFollows(followColl, cbDone) {
+    var followCnt;
+
+    console.log("follows = ["); 
+    followCnt = 1;
+    followColl.find().each(function (err, follow) {
+        if (err) {
+            console.error(err);
+            return;
+        }
+        if (!follow) {
+            console.log("];"); 
+            cbDone();
+            return;
+        }
+        if ((followCnt % 1e4) === 0) {
+            console.warn("Processed %d follows", followCnt);
+        }
+        follow.seq = followCnt++;
+        console.log("%s %s;", follow.src, follow.dst);
+    });
+}
+
+function dumpAll(db) {
+
+    function usersDone() {
+        db.collection("Tweet", function (err, tweetColl) {
+            if (err) {
+                console.error(err);
+                return;
+            }
+            dumpTweets(tweetColl, tweetsDone);
+        });
+    }
+    
+
+    function tweetsDone() {
+        db.collection("Follow", function (err, followColl) {
+            if (err) {
+                console.error(err);
+                return;
+            }
+            dumpFollows(followColl, followsDone);
+        });
+    }
+
+    function followsDone() {
+        db.close();
+    }
+
+    db.collection("User", function (err, userColl) {
+        if (err) {
+            console.error(err);
+            return;
+        }
+        dumpUsers(userColl, usersDone);
+    });
+}
+
+
 // Connect to db, get all connections, start the crawler
 MongoClient.connect(options.mongoConnectionString, function (err, db) {
     if (err) {
         console.error(err);
         return;
     }
-    db.collection("User", function (err, userColl) {
-        if (err) {
-            console.error(err);
-            return;
-        }
-        db.collection("Tweet", function (err, tweetColl) {
-            if (err) {
-                console.error(err);
-                return;
-            }
-            db.collection("Follow", function (err, followColl) {
-                if (err) {
-                    console.error(err);
-                    return;
-                }
-                dump(userColl, tweetColl, followColl);
-            });
-        });
-    });
+    dumpAll(db);
 });
