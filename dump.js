@@ -63,7 +63,7 @@ function dumpTweets(tweetColl, cbDone) {
         console.log("tweets(%d).is_retweet = %s;", tweet.seq, tweet.retweeted_status ? "true" : "false");
         tweet.retweet_count && console.log("tweets(%d).retweet_count = %d;", tweet.seq, tweet.retweet_count);
         tweet.entities && tweet.entities.hashtags && tweet.entities.hashtags.length &&
-            console.log("tweets(%d).hashtags = [%s];", tweet.seq, tweet.entities.hashtags.map(function (t) {return "'" + t.text + "'";}).join(","));
+            console.log("tweets(%d).hashtags = '%s';", tweet.seq, tweet.entities.hashtags.map(function (t) {return t.text;}).join(" "));
         tweet.entities && tweet.entities.user_mentions && tweet.entities.user_mentions.length && 
             console.log("tweets(%d).mentions = [%s];", tweet.seq, tweet.entities.user_mentions.map(function (m) {return m.id_str;}).join(","));
         tweet.coordinates && console.log("tweets(%d).coordinates = [%s];", tweet.seq, tweet.coordinates.coordinates.toString());
