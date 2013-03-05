@@ -31,11 +31,11 @@ function dumpUsers(userColl, cbDone) {
         }
         user.seq = userCnt++;
         user.id_str && console.log("users(%d).id = %s;", user.seq, user.id_str);
-        user.screen_name && console.log("users(%d).screen_name = '%s';", user.seq, user.screen_name);
-        user.name && console.log("users(%d).name = '%s';", user.seq, sanitize(user.name));
-        user.created_at && console.log("users(%d).created_at = '%s';", user.seq, user.created_at);
-        user.time_zone && console.log("users(%d).time_zone = '%s';", user.seq, user.time_zone);
-        user.statuses_count && console.log("users(%d).tweet_count = %d;", user.seq, user.statuses_count);
+        console.log("users(%d).screen_name = '%s';", user.seq, user.screen_name ? user.screen_name : "");
+        console.log("users(%d).name = '%s';", user.seq, user.name ? sanitize(user.name) : "");
+        console.log("users(%d).created_at = '%s';", user.seq, user.created_at ? user.created_at : "");
+        console.log("users(%d).time_zone = '%s';", user.seq, user.time_zone ? user.time_zone : "");
+        console.log("users(%d).tweet_count = %d;", user.seq, user.statuses_count ? user.statuses_count : 0);
         allUsers[user.id_str] = user;
     });
 }
@@ -57,23 +57,29 @@ function dumpTweets(tweetColl, cbDone) {
             console.warn("Processed %d tweets", tweetCnt);
         }
         tweet.seq = tweetCnt++;
-        tweet.user && console.log("tweets(%d).user = %s;", tweet.seq, tweet.user.id_str);
-        tweet.created_at && console.log("tweets(%d).created_at = '%s';", tweet.seq, tweet.created_at);
-        tweet.text && console.log("tweets(%d).text = '%s';", tweet.seq, sanitize(tweet.text));
+        console.log("tweets(%d).user = %s;", tweet.seq, tweet.user ? tweet.user.id_str : "");
+        console.log("tweets(%d).created_at = '%s';", tweet.seq, tweet.created_at ? tweet.created_at : "");
+        console.log("tweets(%d).text = '%s';", tweet.seq, tweet.text ? sanitize(tweet.text) : "");
         console.log("tweets(%d).is_retweet = %s;", tweet.seq, tweet.retweeted_status ? "true" : "false");
-        tweet.retweet_count && console.log("tweets(%d).retweet_count = %d;", tweet.seq, tweet.retweet_count);
-        tweet.entities && tweet.entities.hashtags && tweet.entities.hashtags.length &&
+        console.log("tweets(%d).retweet_count = %d;", tweet.seq, tweet.retweet_count ? tweet.retweet_count : 0);
+        if (tweet.entities && tweet.entities.hashtags && tweet.entities.hashtags.length) {
             console.log("tweets(%d).hashtags = '%s';", tweet.seq, tweet.entities.hashtags.map(function (t) {return t.text;}).join(" "));
-        tweet.entities && tweet.entities.user_mentions && tweet.entities.user_mentions.length && 
+        } else {
+            console.log("tweets(%d).hashtags = '';", tweet.seq);
+        }
+        if (tweet.entities && tweet.entities.user_mentions && tweet.entities.user_mentions.length) {
             console.log("tweets(%d).mentions = [%s];", tweet.seq, tweet.entities.user_mentions.map(function (m) {return m.id_str;}).join(","));
-        tweet.coordinates && console.log("tweets(%d).coordinates = [%s];", tweet.seq, tweet.coordinates.coordinates.toString());
+        } else {
+            console.log("tweets(%d).mentions = [];", tweet.seq);
+        }
+        console.log("tweets(%d).coordinates = [%s];", tweet.seq, tweet.coordinates ? tweet.coordinates.coordinates.toString() : "");
     });
 }
 
 function dumpFollows(followColl, cbDone) {
     var followCnt, internalFollowCnt;
 
-    console.log("follows = ["); 
+    console.log("internal_follows = ["); 
     followCnt = internalFollowCnt = 1;
     followColl.find().each(function (err, follow) {
         var isInternal;
@@ -94,8 +100,9 @@ function dumpFollows(followColl, cbDone) {
         isInternal = allUsers.hasOwnProperty(follow.src) && allUsers.hasOwnProperty(follow.dst);
         if (isInternal) {
             internalFollowCnt += 1;
+            console.log("%s %s %s;", follow.src, follow.dst);
         }
-        console.log("%s %s %s;", follow.src, follow.dst, isInternal.toString());
+        // console.log("%s %s %s;", follow.src, follow.dst, isInternal.toString());
     });
 }
 
