@@ -2,6 +2,7 @@
 "use strict";
 
 var options = {
+        // NOTE: These credentials are no longer valid, request new ones at https://apps.twitter.com/
         twitterAccessToken: "1092955122-x8ViAZ2030vjski3ZIvwqX6ZjAoqilqzvbfaQd9",
         twitterAccessTokenSecret: "PKLGIiHWA3mA1K2bfyVtynRyTeFy8xYwRmr6XhBGQ",
         twitterConsumerKey: "rdDcbK0Hqjd8ZcwxMmVg",
